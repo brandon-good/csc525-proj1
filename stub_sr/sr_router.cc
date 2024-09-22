@@ -1,5 +1,5 @@
 /**********************************************************************
- * file:  sr_router.c
+ * file:  sr_router.cc
  * date:  Mon Feb 18 12:50:42 PST 2002
  * Contact: casado@stanford.edu
  *
@@ -29,7 +29,7 @@
  *
  *---------------------------------------------------------------------*/
 
-void sr_init(struct sr_instance *sr)
+extern "C" void sr_init(struct sr_instance *sr)
 {
     /* REQUIRES */
     assert(sr);
@@ -54,17 +54,17 @@ void sr_init(struct sr_instance *sr)
  *
  *---------------------------------------------------------------------*/
 
-void sr_handlepacket(struct sr_instance *sr,
-                     uint8_t *packet /* lent */,
-                     unsigned int len,
-                     char *interface /* lent */)
+extern "C" void sr_handlepacket(struct sr_instance *sr,
+                                uint8_t *packet /* lent */,
+                                unsigned int len,
+                                char *interface /* lent */)
 {
     /* REQUIRES */
     assert(sr);
     assert(packet);
     assert(interface);
     printf("*** -> Received packet of length %d \n", len);
-    sr_ethernet_hdr *ethernet_packet = std::static_cast<sr_ethernet_hdr *>(packet);
+    // struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
 
 } /* end sr_ForwardPacket */
 
