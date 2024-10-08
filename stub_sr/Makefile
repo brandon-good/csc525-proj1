@@ -35,6 +35,9 @@ endif
 CFLAGS = -g -Wall -std=c17 -D_DEBUG_ -DVNL $(ARCH)
 CPPFLAGS = -g -Wall -std=c++17 -D_DEBUG_ -DVNL $(ARCH)
 
+RELEASE_CFLAGS = -std=c17 -DVNL $(ARCH)
+RELEASE_CPPFLAGS = -std=c++17 -DVNL $(ARCH)
+
 LIBS= $(SOCK) -lm
 PFLAGS= -follow-child-processes=yes -cache-dir=/tmp/${USER}
 PURIFY= purify ${PFLAGS}
@@ -55,11 +58,12 @@ $(sr_DEPS) : .%.d : %.c
 include $(sr_DEPS)	
 
 sr_router:
+	echo "REMEMBER: YOU'RE BUILDING WITH DEBUG ON" && \
 	g++ -MM $(CPPFLAGS) sr_router.cc > .sr_router.d && \
 	g++ -c $(CPPFLAGS) sr_router.cc -o sr_router.o
 
 
-sr : sr_router $(sr_OBJS) 
+sr :  $(sr_OBJS) sr_router
 	g++  -o sr sr_router.o $(sr_OBJS) $(LIBS)
 
 sr.purify : $(sr_OBJS)

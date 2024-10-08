@@ -13,13 +13,62 @@
  *
  **********************************************************************/
 
+extern "C"
+{
 #include <stdio.h>
 #include <assert.h>
 
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_router.h"
+}
 #include "sr_protocol.h"
+
+#include "utils.h"
+#include <iostream>
+#include <unordered_map>
+#include <string>
+#include <cstring>
+#include <array>
+
+std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
+
+bool WAITING = false;
+
+// I want to copy the values here. The mem will get deleted if I do not, because the C functions clear the values.
+inline void cache_put(in_addr_t ip, std::string mac)
+{
+    DebugMAC(mac.data());
+    Debug(" CACHED to %s \n", inet_ntoa((in_addr){ip}));
+
+    utils::arpcache_mac entry =
+        {
+            std::time(nullptr), // now time
+            mac,
+        };
+
+    ARPCACHE[ip] = entry;
+}
+
+inline std::string cache_get(in_addr_t ip)
+{
+    Debug("CHECKING CACHE FOR %s \n", inet_ntoa((in_addr){ip}));
+
+    auto result = ARPCACHE.find(ip);
+
+    if (result != ARPCACHE.end())
+    {
+        // check time
+        if (std::time(nullptr) - result->second.cache_time > CACHETIMEOUTSEC)
+        {
+            Debug("CACHE HIT! ");
+            DebugMAC(result->second.mac);
+            Debug("\n");
+            return result->second.mac;
+        }
+    }
+    return "";
+}
 
 /*---------------------------------------------------------------------
  * Method: sr_init(void)
@@ -53,7 +102,6 @@ extern "C" void sr_init(struct sr_instance *sr)
  * the method call.
  *
  *---------------------------------------------------------------------*/
-
 extern "C" void sr_handlepacket(struct sr_instance *sr,
                                 uint8_t *packet /* lent */,
                                 unsigned int len,
@@ -63,12 +111,157 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
     assert(sr);
     assert(packet);
     assert(interface);
-    printf("*** -> Received packet of length %d \n", len);
-    // struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
+    printf("\n\n*** -> Received packet of length %d \n", len);
+    struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
+    const auto ethernet_type = utils::byteswap(ethernet_packet->ether_type);
 
+    switch (ethernet_type)
+    {
+    case ETHERTYPE_IP:
+        Debug("ETHERNET PACKET TYPE IS IP\n");
+        break;
+    case ETHERTYPE_ARP:
+        Debug("ETHERNET PACKET TYPE IS ARP\n");
+        Debug("Calling process_as_arp\n\n\n ");
+        process_as_arp(
+            sr, packet, len, interface);
+        break;
+
+    default:
+        Debug("TYPE OF ETHERNET PACKET IS UNKNOWN");
+        Debug("ethernet_type is %d \n", ethernet_type);
+        break;
+    }
 } /* end sr_ForwardPacket */
 
 /*---------------------------------------------------------------------
- * Method:
+ * Method: process_as_arp
+ *  Process the arp packet.
  *
  *---------------------------------------------------------------------*/
+void process_as_arp(struct sr_instance *sr,
+                    uint8_t *packet,
+                    const unsigned int len,
+                    const char *interface)
+{
+    assert(packet);
+
+    struct sr_arphdr *arp_packet = reinterpret_cast<struct sr_arphdr *>(packet + sizeof(struct sr_ethernet_hdr));
+    // from slides 04-project
+    assert(utils::byteswap(arp_packet->ar_hrd) == ARPHDR_ETHER);
+
+    assert(utils::byteswap(arp_packet->ar_pro) == ETHERTYPE_IP);
+    assert(arp_packet->ar_hln == 6);
+    assert(arp_packet->ar_pln == 4);
+    assert(sr);
+
+    auto arp_operation = utils::byteswap(arp_packet->ar_op);
+    switch (arp_operation)
+    {
+    case ARP_REQUEST:
+    {
+        incoming_arp_request(sr, packet, len, interface);
+        break;
+    }
+    case ARP_REPLY:
+        Debug("ARP OP IS REPLY");
+        // process_arp_reply();
+        break;
+    default:
+        break;
+    }
+}
+
+void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *interface)
+{
+    struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
+
+    struct sr_arphdr *arp_packet = reinterpret_cast<struct sr_arphdr *>(packet + sizeof(struct sr_ethernet_hdr));
+    Debug("ARP OP IS REQUEST\n");
+    Debug("TARGET HW ADDR IS: ");
+    DebugMAC(arp_packet->ar_tha);
+    Debug("\n");
+    Debug("TARGET IP ADDR %s \n", inet_ntoa((in_addr){arp_packet->ar_tip}));
+
+    Debug("\n");
+    Debug("SOURCE HW ADDR IS: ");
+    DebugMAC(arp_packet->ar_sha);
+    Debug("\n");
+    Debug("SOURCE IP ADDR %s \n", inet_ntoa((in_addr){arp_packet->ar_sip}));
+    Debug("\n");
+    assert(std::memcmp(arp_packet->ar_tha, "\0\0\0", ETHER_ADDR_LEN) == 0);
+
+    // cache the src hw and src ip
+
+    std::string cache_mac{reinterpret_cast<const char *>(arp_packet->ar_sha), ETHER_ADDR_LEN};
+
+    cache_put(arp_packet->ar_sip, cache_mac);
+
+    // check the cache to see if we have a match there;
+    std::string cache_hit{cache_get(arp_packet->ar_tip)};
+    if (!cache_hit.empty())
+    {
+        // fill out with the cached info
+        ;
+    }
+    else
+    {
+        // check to see if the target ip in the arp header matches an interface IP
+        struct sr_if *if_walker = sr->if_list;
+        while (if_walker)
+        {
+            if (arp_packet->ar_tip == if_walker->ip)
+            {
+                Debug("TARGET IP IS: %s WHICH MATCHES WITH %s\n", inet_ntoa((in_addr){arp_packet->ar_tip}), if_walker->name);
+                break;
+            }
+            if_walker = if_walker->next;
+        }
+
+        if (if_walker) // then its a match
+        {
+            // need to send back info on the one it is connected to
+            Debug("MATCH %s", if_walker->name);
+            // this means the target ip matched one of the router's interfaces. get the interface info and send
+            // an arp reply
+            sr_if *connected_if = sr_get_interface(sr, interface);
+            std::memcpy(ethernet_packet->ether_dhost, ethernet_packet->ether_shost, ETHER_ADDR_LEN);
+            std::memcpy(ethernet_packet->ether_shost, connected_if->addr, ETHER_ADDR_LEN);
+            uint16_t reply = ARP_REPLY;
+            arp_packet->ar_op = utils::byteswap(reply);
+
+            uint32_t tmp = arp_packet->ar_sip;
+            arp_packet->ar_sip = connected_if->ip;
+            arp_packet->ar_tip = tmp;
+
+            std::memcpy(arp_packet->ar_tha, arp_packet->ar_sha, ETHER_ADDR_LEN);
+            std::memcpy(arp_packet->ar_sha, connected_if->addr, ETHER_ADDR_LEN);
+            if (sr_send_packet(sr, packet, len, connected_if->name))
+            {
+                return;
+            }
+            else
+            {
+                std::runtime_error{"tears"};
+            }
+        }
+        else
+        {
+            ; // do nothing, no match. Just drop the packet.
+            return;
+        }
+
+        // std::string cache_mac{reinterpret_cast<const char *>(arp_packet->ar_sha), ETHER_ADDR_LEN};
+
+        // if match, send response with mac addr of interface that matched
+        // if no match, do nothing
+
+        // process ARP Request
+        //  1. check the cache for a match
+        //  2. look at the target IP, and get the subnet
+        //  3. see if subnet is in your routing table
+        //  4. if it is, send an ARP reply with the MAC addr of the interface that the arp request came through
+        //  5. Send out an ARP request for the next hop mac addr for that IP, cache result
+        //  5. Get an IP Packet?
+    }
+}

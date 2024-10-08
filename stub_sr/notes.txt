@@ -1,0 +1,10 @@
+         //ether dest   //eth source   //eth type   //ar hrd
+0x0000:  ffff ffff ffff 3a36 bfa0 152b 0806        0001
+
+         /ar pro  /hln  /pln  //arp op  // arp sender hw   // arp sender ip 
+0x0010:  0800     06    04    0001      3a36 bfa0 152b     ac1d 0849
+
+         // arp target hw    // arp ip        
+0x0020:  0000 0000 0000      ac1d 0848
+
+// target hw is 0s because this is an arp request

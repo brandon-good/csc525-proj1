@@ -77,7 +77,10 @@ struct sr_instance
 int sr_verify_routing_table(struct sr_instance *sr);
 
 /* -- sr_vns_comm.c -- */
-int sr_send_packet(struct sr_instance *, uint8_t *, unsigned int, const char *);
+int sr_send_packet(struct sr_instance *sr /* borrowed */,
+                   uint8_t *buf /* borrowed */,
+                   unsigned int len,
+                   const char *iface /* borrowed */);
 int sr_connect_to_server(struct sr_instance *, unsigned short, char *);
 int sr_read_from_server(struct sr_instance *);
 
@@ -85,14 +88,21 @@ int sr_read_from_server(struct sr_instance *);
 #ifdef __cplusplus
 extern "C" void sr_init(struct sr_instance *);
 extern "C" void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);
+void process_as_arp(struct sr_instance *sr,
+                    uint8_t *packet,
+                    const unsigned int len,
+                    const char *interface);
+void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *interface);
 #else
 void sr_init(struct sr_instance *);
 void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);
+#endif
+#ifndef CACHETIMEOUTSEC
+#define CACHETIMEOUTSEC 10
 #endif
 /* -- sr_if.c -- */
 void sr_add_interface(struct sr_instance *, const char *);
 void sr_set_ether_ip(struct sr_instance *, uint32_t);
 void sr_set_ether_addr(struct sr_instance *, const unsigned char *);
 void sr_print_if_list(struct sr_instance *);
-
 #endif /* SR_ROUTER_H */
