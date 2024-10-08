@@ -89,7 +89,7 @@ tags:
 	ctags *.c
 
 test:
-	./sr -t 302 -l logfile
+	./sr -t 302 -r rtable -l logfile
 
 sniff:
 	tcpdump -r logfile -e -vvv -xx

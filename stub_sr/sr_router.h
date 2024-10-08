@@ -88,11 +88,12 @@ int sr_read_from_server(struct sr_instance *);
 #ifdef __cplusplus
 extern "C" void sr_init(struct sr_instance *);
 extern "C" void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);
-void process_as_arp(struct sr_instance *sr,
-                    uint8_t *packet,
-                    const unsigned int len,
-                    const char *interface);
+void incoming_process_as_arp(struct sr_instance *sr,
+                             uint8_t *packet,
+                             const unsigned int len,
+                             const char *interface);
 void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *interface);
+void incoming_process_as_ip(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *);
 #else
 void sr_init(struct sr_instance *);
 void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);

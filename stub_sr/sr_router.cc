@@ -35,6 +35,35 @@ std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
 
 bool WAITING = false;
 
+/// @brief calc the ip checksum
+/// @param buf pointer to ip header
+/// @param hdr_len length of header in bytes
+/// @return
+inline uint16_t cksum(ip *packet, int hdr_len)
+{
+    int two_byte_words = hdr_len / 2;
+
+    // beating compiler warnings 1 extra cast at a time
+    uint8_t *buf = reinterpret_cast<uint8_t *>(packet);
+    uint16_t *two_byte_buff = reinterpret_cast<uint16_t *>(buf);
+
+    uint64_t sum = 0;
+
+    while (two_byte_words--)
+    {
+        sum += (*two_byte_buff);
+        two_byte_buff++;
+        if (sum & 0xFFFF0000)
+        {
+            /* carry occurred, so wrap around */
+            sum &= 0xFFFF;
+            sum++;
+        }
+    }
+    sum = ~(sum & 0xFFFF);
+    return sum;
+}
+
 // I want to copy the values here. The mem will get deleted if I do not, because the C functions clear the values.
 inline void cache_put(in_addr_t ip, std::string mac)
 {
@@ -119,11 +148,13 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
     {
     case ETHERTYPE_IP:
         Debug("ETHERNET PACKET TYPE IS IP\n");
+        Debug("Calling incoming_process_as_ip");
+        incoming_process_as_ip(sr, packet, len, interface);
         break;
     case ETHERTYPE_ARP:
         Debug("ETHERNET PACKET TYPE IS ARP\n");
-        Debug("Calling process_as_arp\n\n\n ");
-        process_as_arp(
+        Debug("Calling incoming_process_as_arp\n\n\n ");
+        incoming_process_as_arp(
             sr, packet, len, interface);
         break;
 
@@ -139,10 +170,10 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
  *  Process the arp packet.
  *
  *---------------------------------------------------------------------*/
-void process_as_arp(struct sr_instance *sr,
-                    uint8_t *packet,
-                    const unsigned int len,
-                    const char *interface)
+void incoming_process_as_arp(struct sr_instance *sr,
+                             uint8_t *packet,
+                             const unsigned int len,
+                             const char *interface)
 {
     assert(packet);
 
@@ -264,4 +295,32 @@ void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int l
         //  5. Send out an ARP request for the next hop mac addr for that IP, cache result
         //  5. Get an IP Packet?
     }
+}
+
+/// @brief process the incoming packet as an IP packet. Called by sr_handlepacket
+/// @param sr router instance
+/// @param packet incoming datagram
+/// @param len length of the datagram
+/// @param interface name of the interface the datagram was received on
+void incoming_process_as_ip(struct sr_instance *sr,
+                            uint8_t *packet,
+                            const unsigned int len,
+                            const char *interface)
+{
+    // IP forwarding!
+    // Check if dest addr is router's
+    //     1. If ICMP echo reply, then reply
+    //     2. Else, drop it
+    // Decrement the TTL
+    //     1. IF TTL is now 0, drop packet
+    //     2. Otherwise, SET CHECKSUM TO 0, THEN CALCULATE HEADER CHECKSUM, then fill checksum field
+    // Get LONGEST MATCH
+    // Send to next hop out of the corresponding outgoing interface (in routing table)
+    struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
+    Debug("header len is %d\n", ip_packet->ip_hl);
+    Debug("incoming cksum is %d\n", ip_packet->ip_sum);
+    ip_packet->ip_sum = 0;
+    Debug("now the cksum is set to %d\n", ip_packet->ip_sum);
+    // this recast I think would get me fired
+    Debug("calculated cksum is %d\n", cksum(ip_packet, 4 * ip_packet->ip_hl));
 }
