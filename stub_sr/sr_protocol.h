@@ -149,5 +149,28 @@ struct sr_arphdr
     uint32_t ar_tip;                      /* target IP address            */
 } __attribute__((packed));
 
+// ICMP
+struct icmp_hdr
+{
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint32_t misc; // unused by this project i think
+} __attribute((packed));
+
+#ifndef ICMP_HDR_LEN
+#define ICMP_HDR_LEN 8
+static_assert(sizeof(struct icmp_hdr) == ICMP_HDR_LEN);
+#endif
+#ifndef ICMP_ECHO
+#define ICMP_ECHO 8
+#endif
+#ifndef ICMP_ECHOREPLY
+#define ICMP_ECHOREPLY 0
+#ifndef ICMP_CODE
+#define ICMP_CODE 0
+#endif
+#endif
+
 #endif /* -- SR_PROTOCOL_H -- \
         */

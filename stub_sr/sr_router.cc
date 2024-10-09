@@ -39,15 +39,14 @@ bool WAITING = false;
 /// @param buf pointer to ip header
 /// @param hdr_len length of header in bytes
 /// @return
-inline uint16_t cksum(ip *packet, int hdr_len)
+inline uint16_t cksum(uint8_t *packet, size_t hdr_len)
 {
     int two_byte_words = hdr_len / 2;
 
     // beating compiler warnings 1 extra cast at a time
-    uint8_t *buf = reinterpret_cast<uint8_t *>(packet);
-    uint16_t *two_byte_buff = reinterpret_cast<uint16_t *>(buf);
+    uint16_t *two_byte_buff = reinterpret_cast<uint16_t *>(packet);
 
-    uint64_t sum = 0;
+    uint32_t sum = 0;
 
     while (two_byte_words--)
     {
@@ -96,6 +95,7 @@ inline std::string cache_get(in_addr_t ip)
             return result->second.mac;
         }
     }
+    Debug("CACHE MISS!\n");
     return "";
 }
 
@@ -148,7 +148,7 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
     {
     case ETHERTYPE_IP:
         Debug("ETHERNET PACKET TYPE IS IP\n");
-        Debug("Calling incoming_process_as_ip");
+        Debug("Calling incoming_process_as_ip\n");
         incoming_process_as_ip(sr, packet, len, interface);
         break;
     case ETHERTYPE_ARP:
@@ -296,7 +296,20 @@ void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int l
         //  5. Get an IP Packet?
     }
 }
-
+bool ip_is_router(struct sr_instance *sr, in_addr_t ip_addr)
+{
+    struct sr_if *if_walker = sr->if_list;
+    while (if_walker)
+    {
+        if (ip_addr == if_walker->ip)
+        {
+            Debug("TARGET IP IS: %s WHICH MATCHES WITH %s\n", inet_ntoa((in_addr){ip_addr}), if_walker->name);
+            return true;
+        }
+        if_walker = if_walker->next;
+    }
+    return false;
+}
 /// @brief process the incoming packet as an IP packet. Called by sr_handlepacket
 /// @param sr router instance
 /// @param packet incoming datagram
@@ -317,10 +330,36 @@ void incoming_process_as_ip(struct sr_instance *sr,
     // Get LONGEST MATCH
     // Send to next hop out of the corresponding outgoing interface (in routing table)
     struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
-    Debug("header len is %d\n", ip_packet->ip_hl);
-    Debug("incoming cksum is %d\n", ip_packet->ip_sum);
+    // if (--(ip_packet->ip_ttl) <= 0)
+    // {
+    //     return; // if the TTL is 0, drop the packet
+    // };
+
+    if (ip_is_router(sr, ip_packet->ip_dst.s_addr) && ip_packet->ip_p == IPPROTO_ICMP)
+    {
+        Debug("received an ICMP packet\n");
+        struct icmp_hdr *icmp = reinterpret_cast<struct icmp_hdr *>(packet + sizeof(struct sr_ethernet_hdr) + ip_packet->ip_hl * 4);
+        Debug("cksum: %d \n", icmp->checksum);
+        Debug("type:  %d\n", icmp->type);
+        Debug("code: %d\n", icmp->code);
+
+        icmp->checksum = 0;
+        if (icmp->code == ICMP_CODE && icmp->type == ICMP_ECHO)
+        {
+            Debug("ICMP packet is a REQUEST\n");
+            Debug("ICMP calc cksum %d\n", cksum(reinterpret_cast<uint8_t *>(icmp), ICMP_HDR_LEN));
+        }
+    }
+    else
+    {
+        //
+    }
+    Debug("IP cksum: %d\n", ip_packet->ip_sum);
     ip_packet->ip_sum = 0;
-    Debug("now the cksum is set to %d\n", ip_packet->ip_sum);
-    // this recast I think would get me fired
-    Debug("calculated cksum is %d\n", cksum(ip_packet, 4 * ip_packet->ip_hl));
+
+    // very last thing
+    Debug("IP calced cksum: %d\n", cksum(reinterpret_cast<uint8_t *>(ip_packet), 4 * ip_packet->ip_hl));
+
+    ip_packet->ip_sum = cksum(reinterpret_cast<uint8_t *>(ip_packet), 4 * ip_packet->ip_hl);
+    /// send?
 }
