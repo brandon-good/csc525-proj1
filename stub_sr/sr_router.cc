@@ -35,34 +35,38 @@ std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
 
 bool WAITING = false;
 
-/// @brief calc the ip checksum
-/// @param buf pointer to ip header
-/// @param hdr_len length of header in bytes
+/// @brief DONT USE THIS
+/// @param buf POINTER TO packet
+/// @param hdr_len total bytes to include
 /// @return
-inline uint16_t cksum(uint8_t *packet, size_t hdr_len)
+inline uint16_t cksum(const uint8_t *packet, size_t hdr_len)
 {
     int two_byte_words = hdr_len / 2;
-
-    // beating compiler warnings 1 extra cast at a time
-    uint16_t *two_byte_buff = reinterpret_cast<uint16_t *>(packet);
+    const uint16_t *two_byte_buff = reinterpret_cast<const uint16_t *>(packet);
 
     uint32_t sum = 0;
-
     while (two_byte_words--)
     {
         sum += (*two_byte_buff);
         two_byte_buff++;
-        if (sum & 0xFFFF0000)
+        if (sum >> 16)
         {
-            /* carry occurred, so wrap around */
-            sum &= 0xFFFF;
-            sum++;
+            sum = (sum & 0xFFFF) + (sum >> 16);
         }
     }
     sum = ~(sum & 0xFFFF);
     return sum;
 }
 
+inline uint16_t icmp_cksum(const struct ip *i, const struct icmp_hdr *icmp, size_t len)
+{
+    return cksum(reinterpret_cast<const uint8_t *>(icmp), len - sizeof(sr_ethernet_hdr) - 4 * i->ip_hl);
+}
+
+inline uint16_t ip_cksum(const struct ip *i)
+{
+    return cksum(reinterpret_cast<const uint8_t *>(i), 4 * i->ip_hl);
+}
 // I want to copy the values here. The mem will get deleted if I do not, because the C functions clear the values.
 inline void cache_put(in_addr_t ip, std::string mac)
 {
@@ -296,7 +300,8 @@ void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int l
         //  5. Get an IP Packet?
     }
 }
-bool ip_is_router(struct sr_instance *sr, in_addr_t ip_addr)
+
+bool ip_on_router(struct sr_instance *sr, in_addr_t ip_addr)
 {
     struct sr_if *if_walker = sr->if_list;
     while (if_walker)
@@ -310,6 +315,34 @@ bool ip_is_router(struct sr_instance *sr, in_addr_t ip_addr)
     }
     return false;
 }
+int send_icmp_reply(struct sr_instance *sr,
+                    uint8_t *packet,
+                    const unsigned int len,
+                    const char *interface)
+{
+    struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
+    struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
+    struct icmp_hdr *icmp = reinterpret_cast<struct icmp_hdr *>(packet + sizeof(struct sr_ethernet_hdr) + ip_packet->ip_hl * 4);
+
+    sr_if *connected_if = sr_get_interface(sr, interface);
+
+    std::memcpy(ethernet_packet->ether_dhost, ethernet_packet->ether_shost, ETHER_ADDR_LEN);
+    std::memcpy(ethernet_packet->ether_shost, connected_if->addr, ETHER_ADDR_LEN);
+    icmp->type = ICMP_ECHOREPLY;
+    icmp->checksum = icmp_cksum(ip_packet, icmp, len);
+
+    in_addr_t tmp = ip_packet->ip_src.s_addr;
+    ip_packet->ip_src.s_addr = ip_packet->ip_dst.s_addr;
+    ip_packet->ip_dst.s_addr = tmp;
+
+    ip_packet->ip_sum = ip_cksum(ip_packet);
+
+    assert(ip_cksum(ip_packet) == 0);
+    assert(icmp_cksum(ip_packet, icmp, len) == 0);
+
+    return sr_send_packet(sr, packet, len, connected_if->name);
+}
+
 /// @brief process the incoming packet as an IP packet. Called by sr_handlepacket
 /// @param sr router instance
 /// @param packet incoming datagram
@@ -330,36 +363,41 @@ void incoming_process_as_ip(struct sr_instance *sr,
     // Get LONGEST MATCH
     // Send to next hop out of the corresponding outgoing interface (in routing table)
     struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
-    // if (--(ip_packet->ip_ttl) <= 0)
-    // {
-    //     return; // if the TTL is 0, drop the packet
-    // };
+    struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
+    ip_packet->ip_sum = 0;
 
-    if (ip_is_router(sr, ip_packet->ip_dst.s_addr) && ip_packet->ip_p == IPPROTO_ICMP)
+    if (--(ip_packet->ip_ttl) <= 0)
+    {
+        return; // if the TTL is 0, drop the packet
+    };
+
+    if (ip_on_router(sr, ip_packet->ip_dst.s_addr) && ip_packet->ip_p == IPPROTO_ICMP)
     {
         Debug("received an ICMP packet\n");
         struct icmp_hdr *icmp = reinterpret_cast<struct icmp_hdr *>(packet + sizeof(struct sr_ethernet_hdr) + ip_packet->ip_hl * 4);
-        Debug("cksum: %d \n", icmp->checksum);
-        Debug("type:  %d\n", icmp->type);
-        Debug("code: %d\n", icmp->code);
-
         icmp->checksum = 0;
+        // Debug("cksum: %d \n", icmp->checksum);
+        // Debug("type:  %d\n", icmp->type);
+        // Debug("code: %d\n", icmp->code);
         if (icmp->code == ICMP_CODE && icmp->type == ICMP_ECHO)
         {
             Debug("ICMP packet is a REQUEST\n");
-            Debug("ICMP calc cksum %d\n", cksum(reinterpret_cast<uint8_t *>(icmp), ICMP_HDR_LEN));
+            if (send_icmp_reply(sr, packet, len, interface))
+            {
+                return;
+            }
+            else
+            {
+                std::runtime_error{"tears"};
+            }
+        }
+        else
+        {
+            return;
         }
     }
     else
     {
         //
     }
-    Debug("IP cksum: %d\n", ip_packet->ip_sum);
-    ip_packet->ip_sum = 0;
-
-    // very last thing
-    Debug("IP calced cksum: %d\n", cksum(reinterpret_cast<uint8_t *>(ip_packet), 4 * ip_packet->ip_hl));
-
-    ip_packet->ip_sum = cksum(reinterpret_cast<uint8_t *>(ip_packet), 4 * ip_packet->ip_hl);
-    /// send?
 }

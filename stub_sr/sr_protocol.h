@@ -152,11 +152,12 @@ struct sr_arphdr
 // ICMP
 struct icmp_hdr
 {
-    uint8_t type;
-    uint8_t code;
-    uint16_t checksum;
-    uint32_t misc; // unused by this project i think
-} __attribute((packed));
+    uint8_t type;        // ICMP message type (8 for Echo Request, 0 for Echo Reply)
+    uint8_t code;        // Code (usually 0 for Echo Request/Reply)
+    uint16_t checksum;   // Checksum of the ICMP message
+    uint16_t identifier; // Identifier to help match requests and replies
+    uint16_t sequence;   // Sequence number for matching requests and replies
+};
 
 #ifndef ICMP_HDR_LEN
 #define ICMP_HDR_LEN 8
