@@ -343,6 +343,32 @@ int send_icmp_reply(struct sr_instance *sr,
     return sr_send_packet(sr, packet, len, connected_if->name);
 }
 
+bool longest_match(sr_rt *rtable, ip *ip_packet)
+{
+    sr_rt *curr = rtable;
+    bool match = false;
+    while (curr)
+    {
+        if ((ip_packet->ip_dst.s_addr & curr->mask.s_addr) == (curr->dest.s_addr & curr->mask.s_addr))
+        { // if this one is a match
+            if (!match)
+            {
+                Debug("Found a match on %s\n", curr->interface);
+                match = true;
+                rtable = curr;
+            }
+            else if (match && (rtable->mask.s_addr < curr->mask.s_addr)) // if there has already been a match, see if the new mask is longer
+            {
+                Debug("Found a LONGER match on %s\n", curr->interface);
+                rtable = curr;
+            }
+        }
+        curr = curr->next;
+    }
+
+    return match;
+}
+
 /// @brief process the incoming packet as an IP packet. Called by sr_handlepacket
 /// @param sr router instance
 /// @param packet incoming datagram
@@ -363,7 +389,6 @@ void incoming_process_as_ip(struct sr_instance *sr,
     // Get LONGEST MATCH
     // Send to next hop out of the corresponding outgoing interface (in routing table)
     struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
-    struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
     ip_packet->ip_sum = 0;
 
     if (--(ip_packet->ip_ttl) <= 0)
@@ -393,11 +418,14 @@ void incoming_process_as_ip(struct sr_instance *sr,
         }
         else
         {
-            return;
+            return; // drop the packet
         }
     }
     else
     {
-        //
+        // IP packet forwarding
+        sr_rt *rtable = sr->routing_table;
+        longest_match(rtable, ip_packet);
+        // check the routing table for the longest match
     }
 }
