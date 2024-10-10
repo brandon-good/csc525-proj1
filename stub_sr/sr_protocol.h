@@ -118,7 +118,7 @@ struct sr_ethernet_hdr
 } __attribute__((packed));
 
 #ifndef ARPHDR_ETHER
-#define ARPHDR_ETHER 1
+#define ARPHDR_ETHER 0x01
 #endif
 
 #ifndef IPPROTO_ICMP

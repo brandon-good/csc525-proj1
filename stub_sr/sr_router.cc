@@ -30,10 +30,12 @@ extern "C"
 #include <string>
 #include <cstring>
 #include <array>
+#include <queue>
 
 std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
+std::queue<uint8_t *> PACKET_BUFFER;
 
-bool WAITING = false;
+bool WAITING_FOR_ARP_REPLY = false;
 
 /// @brief DONT USE THIS
 /// @param buf POINTER TO packet
@@ -75,7 +77,7 @@ inline void cache_put(in_addr_t ip, std::string mac)
 
     utils::arpcache_mac entry =
         {
-            std::time(nullptr), // now time
+            std::chrono::system_clock::now(), // now time
             mac,
         };
 
@@ -86,17 +88,23 @@ inline std::string cache_get(in_addr_t ip)
 {
     Debug("CHECKING CACHE FOR %s \n", inet_ntoa((in_addr){ip}));
 
-    auto result = ARPCACHE.find(ip);
+    const auto result = ARPCACHE.find(ip);
 
     if (result != ARPCACHE.end())
     {
         // check time
-        if (std::time(nullptr) - result->second.cache_time > CACHETIMEOUTSEC)
+        Debug("Cache is not empty. tdiff is %f\n", std::chrono::duration<double>(std::chrono::system_clock::now() - result->second.cache_time).count());
+        if (std::chrono::duration<double>(std::chrono::system_clock::now() - result->second.cache_time).count() < CACHETIMEOUTSEC)
         {
-            Debug("CACHE HIT! ");
+            Debug("CACHE HIT!\n");
             DebugMAC(result->second.mac);
             Debug("\n");
             return result->second.mac;
+        }
+        else
+        {
+            Debug("CACHE TIMEOUT! Removing...\n");
+            ARPCACHE.erase(ip);
         }
     }
     Debug("CACHE MISS!\n");
@@ -145,6 +153,9 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
     assert(packet);
     assert(interface);
     printf("\n\n*** -> Received packet of length %d \n", len);
+
+    // if we aren't waiting for an arp reply and have packets in the packet buffer, handle those first
+
     struct sr_ethernet_hdr *ethernet_packet = reinterpret_cast<struct sr_ethernet_hdr *>(packet);
     const auto ethernet_type = utils::byteswap(ethernet_packet->ether_type);
 
@@ -152,8 +163,15 @@ extern "C" void sr_handlepacket(struct sr_instance *sr,
     {
     case ETHERTYPE_IP:
         Debug("ETHERNET PACKET TYPE IS IP\n");
-        Debug("Calling incoming_process_as_ip\n");
-        incoming_process_as_ip(sr, packet, len, interface);
+        if (!WAITING_FOR_ARP_REPLY)
+        {
+            Debug("Calling incoming_process_as_ip\n");
+            incoming_process_as_ip(sr, packet, len, interface);
+        }
+        else
+        {
+            Debug("BUFFERING IP PACKET\n");
+        }
         break;
     case ETHERTYPE_ARP:
         Debug("ETHERNET PACKET TYPE IS ARP\n");
@@ -191,19 +209,17 @@ void incoming_process_as_arp(struct sr_instance *sr,
     assert(sr);
 
     auto arp_operation = utils::byteswap(arp_packet->ar_op);
-    switch (arp_operation)
-    {
-    case ARP_REQUEST:
+
+    if (!WAITING_FOR_ARP_REPLY && arp_operation == ARP_REQUEST)
     {
         incoming_arp_request(sr, packet, len, interface);
-        break;
     }
-    case ARP_REPLY:
+    else if (arp_operation == ARP_REPLY)
+    {
         Debug("ARP OP IS REPLY");
-        // process_arp_reply();
-        break;
-    default:
-        break;
+        WAITING_FOR_ARP_REPLY = false;
+
+        // process_arp_reply();}
     }
 }
 
@@ -224,7 +240,7 @@ void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int l
     Debug("\n");
     Debug("SOURCE IP ADDR %s \n", inet_ntoa((in_addr){arp_packet->ar_sip}));
     Debug("\n");
-    assert(std::memcmp(arp_packet->ar_tha, "\0\0\0", ETHER_ADDR_LEN) == 0);
+    assert(std::memcmp(arp_packet->ar_tha, "\0\0\0\0\0", ETHER_ADDR_LEN) == 0);
 
     // cache the src hw and src ip
 
@@ -368,6 +384,59 @@ bool longest_match(sr_rt *rtable, ip *ip_packet)
 
     return match;
 }
+void send_arp_request(struct sr_instance *sr,
+                      uint32_t target_ip,
+                      uint8_t *packet,
+                      const unsigned int len,
+                      const char *interface)
+{
+    size_t req_size = sizeof(sr_ethernet_hdr) + sizeof(sr_arphdr);
+    uint8_t req[req_size];
+    sr_if *inter = sr_get_interface(sr, interface);
+    // fill out ethernet packet
+    struct sr_ethernet_hdr *req_eth = reinterpret_cast<sr_ethernet_hdr *>(&req[0]);
+    std::memcpy(req_eth->ether_dhost, "\xff\xff\xff\xff\xff\xff", ETHER_ADDR_LEN);
+    std::memcpy(req_eth->ether_shost, inter->addr, ETHER_ADDR_LEN);
+    req_eth->ether_type = utils::byteswap(uint16_t{ETHERTYPE_ARP});
+
+    // fill out arp packet
+
+    struct sr_arphdr *req_arp = reinterpret_cast<sr_arphdr *>(&req[sizeof(sr_ethernet_hdr)]);
+
+    req_arp->ar_hrd = utils::byteswap(uint16_t{ARPHDR_ETHER});
+    req_arp->ar_pro = utils::byteswap(uint16_t{ETHERTYPE_IP});
+    req_arp->ar_hln = 6;
+    req_arp->ar_pln = 4;
+    req_arp->ar_op = utils::byteswap(uint16_t{ARP_REQUEST});
+
+    std::memcpy(req_arp->ar_sha, inter->addr, ETHER_ADDR_LEN);
+    req_arp->ar_sip = inter->ip;
+
+    std::memcpy(req_arp->ar_tha, "\x00\x00\x00\x00\x00\x00", ETHER_ADDR_LEN);
+    req_arp->ar_tip = target_ip;
+
+    Debug("TARGET HW ADDR IS: ");
+    DebugMAC(req_arp->ar_tha);
+    Debug("\n");
+    Debug("TARGET IP ADDR %s \n", inet_ntoa((in_addr){req_arp->ar_tip}));
+
+    Debug("\n");
+    Debug("SOURCE HW ADDR IS: ");
+    DebugMAC(req_arp->ar_sha);
+    Debug("\n");
+    Debug("SOURCE IP ADDR %s \n", inet_ntoa((in_addr){req_arp->ar_sip}));
+    Debug("\n");
+
+    if (sr_send_packet(sr, req, req_size, interface))
+    {
+        Debug("ARP REQUEST SENT!\n");
+        return;
+    }
+    else
+    {
+        std::runtime_error("the arp request didn't work");
+    }
+}
 
 /// @brief process the incoming packet as an IP packet. Called by sr_handlepacket
 /// @param sr router instance
@@ -425,7 +494,38 @@ void incoming_process_as_ip(struct sr_instance *sr,
     {
         // IP packet forwarding
         sr_rt *rtable = sr->routing_table;
-        longest_match(rtable, ip_packet);
+        if (longest_match(rtable, ip_packet))
+        {
+            in_addr_t nexthop = rtable->dest.s_addr;
+
+            if (rtable->dest.s_addr == 0)
+            {
+                nexthop = rtable->gw.s_addr;
+            }
+            // see if you have the mac in your arpcache
+            std::string cached = cache_get(nexthop);
+            if (cached.empty())
+            {
+                Debug("prepping an ARP request...buffering all other incoming packets\n");
+                // BUFFER THIS PACKET
+
+                WAITING_FOR_ARP_REPLY = true;
+                send_arp_request(sr,
+                                 nexthop,
+                                 packet,
+                                 len,
+                                 rtable->interface);
+            }
+            else
+            {
+                Debug("we have that cached!\n");
+            }
+        }
+        else
+        {
+            ; // drop the packet
+        }
+
         // check the routing table for the longest match
     }
 }

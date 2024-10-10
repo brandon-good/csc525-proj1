@@ -1,7 +1,7 @@
 #pragma once
 #include <iostream>
 #include "sr_protocol.h"
-#include <ctime>
+#include <chrono>
 
 namespace utils
 {
@@ -19,7 +19,14 @@ namespace utils
 
     struct arpcache_mac
     {
-        std::time_t cache_time;
+        std::chrono::_V2::system_clock::time_point cache_time;
         std::string mac;
+    };
+
+    struct buffered_packet
+    {
+        uint8_t *packet;
+        unsigned int len;
+        char *interface;
     };
 }
