@@ -216,9 +216,11 @@ void incoming_process_as_arp(struct sr_instance *sr,
     }
     else if (arp_operation == ARP_REPLY)
     {
-        Debug("ARP OP IS REPLY");
+        Debug("ARP OP IS REPLY\n");
         WAITING_FOR_ARP_REPLY = false;
+        std::string cache_mac{reinterpret_cast<const char *>(arp_packet->ar_sha), ETHER_ADDR_LEN};
 
+        cache_put(arp_packet->ar_sip, cache_mac);
         // process_arp_reply();}
     }
 }
@@ -359,7 +361,7 @@ int send_icmp_reply(struct sr_instance *sr,
     return sr_send_packet(sr, packet, len, connected_if->name);
 }
 
-bool longest_match(sr_rt *rtable, ip *ip_packet)
+bool longest_match(sr_rt *&rtable, ip *ip_packet)
 {
     sr_rt *curr = rtable;
     bool match = false;
@@ -383,6 +385,33 @@ bool longest_match(sr_rt *rtable, ip *ip_packet)
     }
 
     return match;
+}
+
+void forward_ip_packet(struct sr_instance *sr,
+                       std::string &dst_mac,
+                       uint8_t *packet,
+                       const unsigned int len,
+                       const char *interface)
+{
+    Debug("we're here...........................");
+    struct sr_ethernet_hdr *eth = reinterpret_cast<sr_ethernet_hdr *>(packet);
+    sr_if *inter = sr_get_interface(sr, interface);
+
+    std::memcpy(eth->ether_dhost, dst_mac.data(), ETHER_ADDR_LEN);
+    std::memcpy(eth->ether_shost, inter->addr, ETHER_ADDR_LEN);
+
+    struct ip *ip_packet = reinterpret_cast<struct ip *>(packet + sizeof(struct sr_ethernet_hdr));
+    ip_packet->ip_sum = 0;
+    ip_packet->ip_sum = ip_cksum(ip_packet);
+    if (sr_send_packet(sr, packet, len, interface))
+    {
+        Debug("IP PACKET FORWARDED!\n");
+        return;
+    }
+    else
+    {
+        std::runtime_error("IP PACKET FORWARD FAILED\n");
+    }
 }
 void send_arp_request(struct sr_instance *sr,
                       uint32_t target_ip,
@@ -462,6 +491,7 @@ void incoming_process_as_ip(struct sr_instance *sr,
 
     if (--(ip_packet->ip_ttl) <= 0)
     {
+        Debug("TTL is 0! Dropping the packet \n");
         return; // if the TTL is 0, drop the packet
     };
 
@@ -496,15 +526,17 @@ void incoming_process_as_ip(struct sr_instance *sr,
         sr_rt *rtable = sr->routing_table;
         if (longest_match(rtable, ip_packet))
         {
-            in_addr_t nexthop = rtable->dest.s_addr;
+            in_addr_t nexthop = rtable->gw.s_addr;
+            Debug("  nexthop is %s \n", inet_ntoa((in_addr){nexthop}));
 
-            if (rtable->dest.s_addr == 0)
+            if (rtable->gw.s_addr == 0)
             {
-                nexthop = rtable->gw.s_addr;
+                nexthop = ip_packet->ip_dst.s_addr;
+                Debug("    so nexthop was reset to %s \n", inet_ntoa((in_addr){nexthop}));
             }
             // see if you have the mac in your arpcache
-            std::string cached = cache_get(nexthop);
-            if (cached.empty())
+            std::string dst_mac = cache_get(nexthop);
+            if (dst_mac.empty())
             {
                 Debug("prepping an ARP request...buffering all other incoming packets\n");
                 // BUFFER THIS PACKET
@@ -519,6 +551,7 @@ void incoming_process_as_ip(struct sr_instance *sr,
             else
             {
                 Debug("we have that cached!\n");
+                forward_ip_packet(sr, dst_mac, packet, len, rtable->interface);
             }
         }
         else
