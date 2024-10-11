@@ -1,4 +1,3 @@
-ICMP Echo reply
+I have all the required functionality.
 
-Arp request, response processing
-
+I do currently see a much larger delay (a bit over a second) when the router needs to do it's own arp request and wait for the reply, however, I think this is expected behavior.

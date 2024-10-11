@@ -93,7 +93,8 @@ void incoming_process_as_arp(struct sr_instance *sr,
                              const unsigned int len,
                              const char *interface);
 void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *interface);
-void incoming_process_as_ip(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *);
+void incoming_process_as_ip(sr_instance *sr, uint8_t *packet, const unsigned int len, char *);
+
 #else
 void sr_init(struct sr_instance *);
 void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);
