@@ -33,3 +33,6 @@
 stub_sr/logfile
 
 sr
+*.bin
+*.tgz
+index.html
