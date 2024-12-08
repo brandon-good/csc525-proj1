@@ -58,16 +58,15 @@ $(sr_DEPS) : .%.d : %.c
 include $(sr_DEPS)	
 
 sr_router:
-	echo "REMEMBER: YOU'RE BUILDING WITH DEBUG ON" && \
-	g++ -MM $(RELEASE_CPPFLAGS) sr_router.cc > .sr_router.d && \
-	g++ -c $(RELEASE_CPPFLAGS) sr_router.cc -o sr_router.o
+	g++ -MM $(CPPFLAGS) sr_router.cc > .sr_router.d && \
+	g++ -c $(CPPFLAGS) sr_router.cc -o sr_router.o
 
 
 sr :  $(sr_OBJS) sr_router
 	g++  -O3 -o sr sr_router.o $(sr_OBJS) $(LIBS)
 
 sr.purify : $(sr_OBJS)
-	$(PURIFY) $(CC) $(RELEASE_CPPFLAGS) -o sr.purify $(sr_OBJS) $(LIBS)
+	$(PURIFY) $(CC) $(CPPFLAGS) -o sr.purify $(sr_OBJS) $(LIBS)
 
 
 .PHONY : clean clean-deps dist

@@ -36,3 +36,6 @@ sr
 *.bin
 *.tgz
 index.html
+*tar
+*._*
+auth_key
