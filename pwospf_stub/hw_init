@@ -52,15 +52,15 @@ sr_vns_comm.c:    if ((sr->sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 sr_vns_comm.c:    if (connect(sr->sockfd, (struct sockaddr *)&(sr->sr_addr),
 sr_vns_comm.c:                sizeof(sr->sr_addr)) < 0)
 sr_vns_comm.c:        close(sr->sockfd);
-sr_vns_comm.c:    if(strlen(sr->template) > 0) {
-sr_vns_comm.c:        strncpy(ot.templateName, sr->template, 30);
+sr_vns_comm.c:    if(strlen(sr->tmplate) > 0) {
+sr_vns_comm.c:        strncpy(ot.tmplateName, sr->tmplate, 30);
 sr_vns_comm.c:        strncpy(ot.mVirtualHostID, sr->host, IDSIZE);
 sr_vns_comm.c:        command.topoID = htons(sr->topo_id);
 sr_vns_comm.c:        strncpy( command.mVirtualHostID, sr->host,  IDSIZE);
 sr_vns_comm.c:        strncpy( command.mUID, sr->user, IDSIZE);
 sr_vns_comm.c:    if(vnl_write(sr->vc, buf, buf_len) != buf_len)
 sr_vns_comm.c:    if(send(sr->sockfd, buf, buf_len, 0) != buf_len)
-sr_vns_comm.c:    if(strlen(sr->template) > 0)
+sr_vns_comm.c:    if(strlen(sr->tmplate) > 0)
 sr_vns_comm.c:    fp = fopen(sr->auth_key_fn, "r");
 sr_vns_comm.c:        len_username = strlen(sr->user);
 sr_vns_comm.c:        strcpy(ar->username, sr->user);

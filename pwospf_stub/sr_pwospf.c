@@ -7,17 +7,16 @@
  *
  *---------------------------------------------------------------------------*/
 
-#include "sr_pwospf.h"
-#include "sr_router.h"
-
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
 #include <stdlib.h>
 
+#include "sr_pwospf.h"
+#include "sr_router.h"
 
 /* -- declaration of main thread function for pwospf subsystem --- */
-static void* pwospf_run_thread(void* arg);
+static void *pwospf_run_thread(void *arg);
 
 /*---------------------------------------------------------------------
  * Method: pwospf_init(..)
@@ -28,29 +27,27 @@ static void* pwospf_run_thread(void* arg);
  * by this point.
  *---------------------------------------------------------------------*/
 
-int pwospf_init(struct sr_instance* sr)
+int pwospf_init(struct sr_instance *sr)
 {
     assert(sr);
 
-    sr->ospf_subsys = (struct pwospf_subsys*)malloc(sizeof(struct
-                                                      pwospf_subsys));
+    sr->ospf_subsys = (struct pwospf_subsys *)malloc(sizeof(struct
+                                                            pwospf_subsys));
 
     assert(sr->ospf_subsys);
     pthread_mutex_init(&(sr->ospf_subsys->lock), 0);
 
-
     /* -- handle subsystem initialization here! -- */
 
-
     /* -- start thread subsystem -- */
-    if( pthread_create(&sr->ospf_subsys->thread, 0, pwospf_run_thread, sr)) {
+    if (pthread_create(&sr->ospf_subsys->thread, 0, pwospf_run_thread, sr))
+    {
         perror("pthread_create");
         assert(0);
     }
 
     return 0; /* success */
 } /* -- pwospf_init -- */
-
 
 /*---------------------------------------------------------------------
  * Method: pwospf_lock
@@ -59,10 +56,12 @@ int pwospf_init(struct sr_instance* sr)
  *
  *---------------------------------------------------------------------*/
 
-void pwospf_lock(struct pwospf_subsys* subsys)
+void pwospf_lock(struct pwospf_subsys *subsys)
 {
-    if ( pthread_mutex_lock(&subsys->lock) )
-    { assert(0); }
+    if (pthread_mutex_lock(&subsys->lock))
+    {
+        assert(0);
+    }
 } /* -- pwospf_subsys -- */
 
 /*---------------------------------------------------------------------
@@ -72,10 +71,12 @@ void pwospf_lock(struct pwospf_subsys* subsys)
  *
  *---------------------------------------------------------------------*/
 
-void pwospf_unlock(struct pwospf_subsys* subsys)
+void pwospf_unlock(struct pwospf_subsys *subsys)
 {
-    if ( pthread_mutex_unlock(&subsys->lock) )
-    { assert(0); }
+    if (pthread_mutex_unlock(&subsys->lock))
+    {
+        assert(0);
+    }
 } /* -- pwospf_subsys -- */
 
 /*---------------------------------------------------------------------
@@ -85,12 +86,11 @@ void pwospf_unlock(struct pwospf_subsys* subsys)
  *
  *---------------------------------------------------------------------*/
 
-static
-void* pwospf_run_thread(void* arg)
+static void *pwospf_run_thread(void *arg)
 {
-    struct sr_instance* sr = (struct sr_instance*)arg;
+    struct sr_instance *sr = (struct sr_instance *)arg;
 
-    while(1)
+    while (1)
     {
         /* -- PWOSPF subsystem functionality should start  here! -- */
 
@@ -102,4 +102,3 @@ void* pwospf_run_thread(void* arg)
     };
     return NULL;
 } /* -- run_ospf_thread -- */
-

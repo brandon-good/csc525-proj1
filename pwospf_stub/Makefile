@@ -13,6 +13,10 @@ CC = gcc
 
 OSTYPE = $(shell uname)
 
+ifeq ($(OSTYPE),CYGWIN_NT-5.1)
+ARCH = -D_CYGWIN_
+endif
+
 ifeq ($(OSTYPE),Linux)
 ARCH = -D_LINUX_
 SOCK = -lnsl
@@ -28,13 +32,17 @@ ARCH = -D_DARWIN_
 SOCK =
 endif
 
-CFLAGS = -g -Wall -std=gnu99 -D_DEBUG_ -DVNL $(ARCH)
+CFLAGS = -g -Wall -std=c17 -D_DEBUG_ -DVNL $(ARCH)
+CPPFLAGS = -g -Wall -std=c++17 -D_DEBUG_ -DVNL $(ARCH)
+
+RELEASE_CFLAGS = -std=c17 -O3 -DVNL $(ARCH)
+RELEASE_CPPFLAGS = -std=c++17 -O3 -DVNL $(ARCH)
 
 LIBS= $(SOCK) -lm -lresolv -lpthread
 PFLAGS= -follow-child-processes=yes -cache-dir=/tmp/${USER}
 PURIFY= purify ${PFLAGS}
 
-sr_SRCS = vnlconn.c sr_router.c sr_main.c  \
+sr_SRCS = vnlconn.c sr_main.c  \
           sr_if.c sr_rt.c sr_vns_comm.c   \
           sr_dumper.c sha1.c sr_pwospf.c
 
@@ -42,18 +50,24 @@ sr_OBJS = $(patsubst %.c,%.o,$(sr_SRCS))
 sr_DEPS = $(patsubst %.c,.%.d,$(sr_SRCS))
 
 $(sr_OBJS) : %.o : %.c
-	$(CC) -c $(CFLAGS) $< -o $@
+	$(CC) -c $(RELEASE_CFLAGS) $< -o $@
 
 $(sr_DEPS) : .%.d : %.c
-	$(CC) -MM $(CFLAGS) $<  > $@
+	$(CC) -MM $(RELEASE_CFLAGS) $<  > $@
 
 include $(sr_DEPS)	
 
-sr : $(sr_OBJS)
-	$(CC) $(CFLAGS) -o sr $(sr_OBJS) $(LIBS)
+sr_router:
+	g++ -MM $(CPPFLAGS) sr_router.cc > .sr_router.d && \
+	g++ -c $(CPPFLAGS) sr_router.cc -o sr_router.o
+
+
+sr :  $(sr_OBJS) sr_router
+	g++  -O3 -o sr sr_router.o $(sr_OBJS) $(LIBS)
 
 sr.purify : $(sr_OBJS)
-	$(PURIFY) $(CC) $(CFLAGS) -o sr.purify $(sr_OBJS) $(LIBS)
+	$(PURIFY) $(CC) $(CPPFLAGS) -o sr.purify $(sr_OBJS) $(LIBS)
+
 
 .PHONY : clean clean-deps dist
 
@@ -72,3 +86,14 @@ dist: dist-clean
 
 tags:
 	ctags *.c
+
+test: sr
+	./sr -t 103 -v vhost1 -r rtable.vhost1 -l logfile.vhost1 > /dev/null & export SRVHOST1_PID=$$!;
+	./sr -t 103 -v vhost2 -r rtable.vhost2 -l logfile.vhost2 > /dev/null & export SRVHOST2_PID=$$!;
+	./sr -t 103 -v vhost3 -r rtable.vhost3 -l logfile.vhost3 > /dev/null & export SRVHOST3_PID=$$!;	
+
+stop:
+	pkill -f sr
+
+sniff:
+	tcpdump -r logfile -e -vvv -xx
