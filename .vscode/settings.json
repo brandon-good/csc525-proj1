@@ -54,6 +54,10 @@
         "queue": "cpp",
         "chrono": "cpp",
         "ratio": "cpp",
-        "thread": "cpp"
+        "thread": "cpp",
+        "map": "cpp",
+        "mutex": "c",
+        "condition_variable": "cpp",
+        "shared_mutex": "cpp"
     }
 }

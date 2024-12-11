@@ -2,6 +2,7 @@
 #include <iostream>
 #include "sr_protocol.h"
 #include <chrono>
+#include <mutex>
 
 namespace utils
 {
@@ -29,4 +30,7 @@ namespace utils
         unsigned int len;
         char *interface;
     };
+
 }
+extern std::mutex routingMtx;
+extern std::mutex neighborMtx;

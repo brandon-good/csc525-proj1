@@ -32,6 +32,10 @@ extern "C"
 #include <cstring>
 #include <array>
 #include <queue>
+#include <mutex>
+
+std::mutex routingMtx;
+std::mutex neighborMtx;
 
 std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
 std::queue<utils::buffered_packet *> PACKET_BUFFER;
@@ -42,34 +46,7 @@ bool WAITING_FOR_ARP_REPLY = false;
 /// @param buf POINTER TO packet
 /// @param hdr_len total bytes to include
 /// @return
-inline uint16_t cksum(const uint8_t *packet, size_t hdr_len)
-{
-    int two_byte_words = hdr_len / 2;
-    const uint16_t *two_byte_buff = reinterpret_cast<const uint16_t *>(packet);
 
-    uint32_t sum = 0;
-    while (two_byte_words--)
-    {
-        sum += (*two_byte_buff);
-        two_byte_buff++;
-        if (sum >> 16)
-        {
-            sum = (sum & 0xFFFF) + (sum >> 16);
-        }
-    }
-    sum = ~(sum & 0xFFFF);
-    return sum;
-}
-
-inline uint16_t icmp_cksum(const struct ip *i, const struct icmp_hdr *icmp, size_t len)
-{
-    return cksum(reinterpret_cast<const uint8_t *>(icmp), len - sizeof(sr_ethernet_hdr) - 4 * i->ip_hl);
-}
-
-inline uint16_t ip_cksum(const struct ip *i)
-{
-    return cksum(reinterpret_cast<const uint8_t *>(i), 4 * i->ip_hl);
-}
 // I want to copy the values here. The mem will get deleted if I do not, because the C functions clear the values.
 inline void cache_put(in_addr_t ip, std::string mac)
 {
@@ -564,6 +541,14 @@ void incoming_process_as_ip(struct sr_instance *sr,
         {
             return; // drop the packet
         }
+    }
+    else if (ip_packet->ip_p == OSPF_IP_PROTO && ip_packet->ip_dst.s_addr == OSPF_AllSPFRouters)
+    {
+        // we are receiving a Hello packet
+        // check the version
+        // verify the cksum (zero out the authentification)
+        // check the auth type
+        // update the routing table with the helloint and
     }
     else
     {

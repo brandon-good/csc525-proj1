@@ -44,26 +44,30 @@ PURIFY= purify ${PFLAGS}
 
 sr_SRCS = vnlconn.c sr_main.c  \
           sr_if.c sr_rt.c sr_vns_comm.c   \
-          sr_dumper.c sha1.c sr_pwospf.c
+          sr_dumper.c sha1.c 
 
 sr_OBJS = $(patsubst %.c,%.o,$(sr_SRCS))
 sr_DEPS = $(patsubst %.c,.%.d,$(sr_SRCS))
 
 $(sr_OBJS) : %.o : %.c
-	$(CC) -c $(RELEASE_CFLAGS) $< -o $@
+	$(CC) -c $(CFLAGS) $< -o $@
 
 $(sr_DEPS) : .%.d : %.c
-	$(CC) -MM $(RELEASE_CFLAGS) $<  > $@
+	$(CC) -MM $(CFLAGS) $<  > $@
 
 include $(sr_DEPS)	
 
+sr_pwospf:
+	g++ -MM $(CPPFLAGS) sr_pwospf.cc > .sr_pwospf.d && \
+	g++ -c $(CPPFLAGS) sr_pwospf.cc -o sr_pwospf.o
+
 sr_router:
 	g++ -MM $(CPPFLAGS) sr_router.cc > .sr_router.d && \
-	g++ -c $(CPPFLAGS) sr_router.cc -o sr_router.o
+	g++ -c $(CPPFLAGS) sr_router.cc -o sr_router.o 
 
 
-sr :  $(sr_OBJS) sr_router
-	g++  -O3 -o sr sr_router.o $(sr_OBJS) $(LIBS)
+sr :   $(sr_OBJS)  sr_router sr_pwospf
+	g++ $(CPPFLAGS) -o sr sr_router.o  sr_pwospf.o $(sr_OBJS) $(LIBS)
 
 sr.purify : $(sr_OBJS)
 	$(PURIFY) $(CC) $(CPPFLAGS) -o sr.purify $(sr_OBJS) $(LIBS)

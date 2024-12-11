@@ -14,6 +14,7 @@
 #include <stdio.h>
 
 #include "sr_protocol.h"
+#include "pwospf_protocol.h"
 #ifdef VNL
 #include "vnlconn.h"
 #endif
@@ -88,6 +89,7 @@ int sr_read_from_server(struct sr_instance *);
 
 /* -- sr_router.c -- */
 #ifdef __cplusplus
+
 extern "C" void sr_init(struct sr_instance *);
 extern "C" void sr_handlepacket(struct sr_instance *, uint8_t *, unsigned int, char *);
 void incoming_process_as_arp(struct sr_instance *sr,
@@ -96,6 +98,42 @@ void incoming_process_as_arp(struct sr_instance *sr,
                              const char *interface);
 void incoming_arp_request(sr_instance *sr, uint8_t *packet, const unsigned int len, const char *interface);
 void incoming_process_as_ip(sr_instance *sr, uint8_t *packet, const unsigned int len, char *);
+
+inline uint16_t cksum(const uint8_t *packet, size_t hdr_len)
+{
+    int two_byte_words = hdr_len / 2;
+    const uint16_t *two_byte_buff = reinterpret_cast<const uint16_t *>(packet);
+
+    uint32_t sum = 0;
+    while (two_byte_words--)
+    {
+        sum += (*two_byte_buff);
+        two_byte_buff++;
+        if (sum >> 16)
+        {
+            sum = (sum & 0xFFFF) + (sum >> 16);
+        }
+    }
+    sum = ~(sum & 0xFFFF);
+    return sum;
+}
+
+inline uint16_t icmp_cksum(const struct ip *i, const struct icmp_hdr *icmp, size_t len)
+{
+    return cksum(reinterpret_cast<const uint8_t *>(icmp), len - sizeof(sr_ethernet_hdr) - 4 * i->ip_hl);
+}
+
+inline uint16_t ip_cksum(const struct ip *i)
+{
+    return cksum(reinterpret_cast<const uint8_t *>(i), 4 * i->ip_hl);
+}
+
+inline uint16_t ospfv2_hdr_cksum(const struct ospfv2_hdr *hdr)
+{
+    return cksum(reinterpret_cast<const uint8_t *>(hdr), hdr->len);
+}
+
+void neighborCleanup(sr_instance *sr);
 
 #else
 void sr_init(struct sr_instance *);
@@ -109,4 +147,5 @@ void sr_add_interface(struct sr_instance *, const char *);
 void sr_set_ether_ip(struct sr_instance *, uint32_t);
 void sr_set_ether_addr(struct sr_instance *, const unsigned char *);
 void sr_print_if_list(struct sr_instance *);
+
 #endif /* SR_ROUTER_H */
