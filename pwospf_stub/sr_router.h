@@ -130,7 +130,7 @@ inline uint16_t ip_cksum(const struct ip *i)
 
 inline uint16_t ospfv2_hdr_cksum(const struct ospfv2_hdr *hdr)
 {
-    return cksum(reinterpret_cast<const uint8_t *>(hdr), hdr->len);
+    return cksum(reinterpret_cast<const uint8_t *>(hdr), sizeof(ospfv2_hdr));
 }
 
 void neighborCleanup(sr_instance *sr);

@@ -545,10 +545,30 @@ void incoming_process_as_ip(struct sr_instance *sr,
     else if (ip_packet->ip_p == OSPF_IP_PROTO && ip_packet->ip_dst.s_addr == OSPF_AllSPFRouters)
     {
         // we are receiving a Hello packet
-        // check the version
-        // verify the cksum (zero out the authentification)
-        // check the auth type
-        // update the routing table with the helloint and
+        Debug("received a pwospf HELLO packet\n");
+        ospfv2_hdr *ospfPkt = reinterpret_cast<struct ospfv2_hdr *>(packet + sizeof(struct sr_ethernet_hdr) + ip_packet->ip_hl * 4);
+
+        bool validPkt = true;
+        validPkt = validPkt && ospfPkt->version == OSPF_V2;
+        validPkt = validPkt && ospfPkt->aid == OSPF_DEFAULT_AID;
+        validPkt = validPkt && ospfPkt->audata == OSPF_DEFAULT_AUTHDATA;
+        validPkt = validPkt && ospfPkt->autype == OSPF_DEFAULT_AUTHTYPE;
+
+        uint16_t cksum = ospfPkt->csum;
+        ospfPkt->csum = 0;
+
+        validPkt = validPkt && cksum == ospfv2_hdr_cksum(ospfPkt);
+        Debug("%d\n", validPkt);
+
+        if (!validPkt)
+        {
+            Debug("received an invalid pwospf hello pkt.");
+            return;
+        }
+        else
+        {
+            // update or add to rtable? interface?
+        }
     }
     else
     {

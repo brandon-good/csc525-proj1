@@ -3,6 +3,7 @@
 #include "sr_protocol.h"
 #include <chrono>
 #include <mutex>
+#include <unordered_map>
 
 namespace utils
 {
@@ -32,5 +33,7 @@ namespace utils
     };
 
 }
+
 extern std::mutex routingMtx;
 extern std::mutex neighborMtx;
+// extern std::unordered_map < uint32_t,

@@ -91,13 +91,18 @@ dist: dist-clean
 tags:
 	ctags *.c
 
-test: sr
-	./sr -t 103 -v vhost1 -r rtable.vhost1 -l logfile.vhost1 > /dev/null & export SRVHOST1_PID=$$!;
-	./sr -t 103 -v vhost2 -r rtable.vhost2 -l logfile.vhost2 > /dev/null & export SRVHOST2_PID=$$!;
-	./sr -t 103 -v vhost3 -r rtable.vhost3 -l logfile.vhost3 > /dev/null & export SRVHOST3_PID=$$!;	
+test-static: sr
+	./sr -t 103 -v vhost1 -r rtable.vhost1 -l logfile.vhost1
+	./sr -t 103 -v vhost2 -r rtable.vhost2 -l logfile.vhost2 > /dev/null 
+	./sr -t 103 -v vhost3 -r rtable.vhost3 -l logfile.vhost3 > /dev/null 
 
+test: stop sr 
+	./sr -t 103 -v vhost1 -r rtable.net -l logfile.vhost1  > /dev/null & \
+	./sr -t 103 -v vhost2 -r rtable.empty -l logfile.vhost2 > /dev/null  & \
+	./sr -t 103 -v vhost3 -r rtable.empty -l logfile.vhost3 > /dev/null
+	
 stop:
 	pkill -f sr
 
 sniff:
-	tcpdump -r logfile -e -vvv -xx
+	tcpdump -r logfile.vhost1 -e -vvv -xx

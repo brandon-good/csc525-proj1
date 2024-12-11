@@ -26,6 +26,8 @@ static const uint8_t OSPF_DEFAULT_HELLOINT = 5;  /* seconds */
 static const uint8_t OSPF_DEFAULT_LSUINT = 30;   /* seconds */
 static const uint8_t OSPF_NEIGHBOR_TIMEOUT = 20; /* seconds */
 
+static const uint8_t OSPF_DEFAULT_AID = 0;
+
 static const uint8_t OSPF_TOPO_ENTRY_TIMEOUT = 35; /* seconds */
 
 static const uint8_t OSPF_DEFAULT_AUTHKEY = 0;   /* ignored */

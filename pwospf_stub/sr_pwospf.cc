@@ -129,7 +129,7 @@ void send_hello_pkts(sr_instance *sr)
         ospfHdr->type = OSPF_TYPE_HELLO;
         ospfHdr->len = htons(sizeof(ospfv2_hdr) + sizeof(ospfv2_hello_hdr));
         ospfHdr->rid = sr->ospf_subsys->rid;
-        ospfHdr->aid = 0;
+        ospfHdr->aid = OSPF_DEFAULT_AID;
         ospfHdr->csum = 0;
         ospfHdr->autype = OSPF_DEFAULT_AUTHTYPE;
         ospfHdr->audata = OSPF_DEFAULT_AUTHDATA;
@@ -145,6 +145,7 @@ void send_hello_pkts(sr_instance *sr)
         /////
 
         sr_send_packet(sr, datapacket, len, rtrIf->name);
+        Debug("hello sent...\n");
         rtrIf = rtrIf->next;
     }
 }
@@ -184,39 +185,39 @@ void *pwospf_run_thread(void *arg)
 
 void neighborCleanup(sr_instance *sr)
 {
-    std::lock_guard<std::mutex> lock(routingMtx);
+    // std::lock_guard<std::mutex> lock(routingMtx);
 
-    struct sr_rt *rTableEntry = sr->routing_table;
-    struct sr_rt *prev;
+    // struct sr_rt *rTableEntry = sr->routing_table;
+    // struct sr_rt *prev;
 
-    while (rTableEntry)
-    {
-        time_t now = time(NULL);
-        if (rTableEntry->isStatic == RTABLE_ENTRY_DYNAMIC)
-        {
-            if (now - rTableEntry->refreshTime > 3 * rTableEntry->helloInt)
-            {
-                // if first entry is stale...
-                if (prev == nullptr)
-                {
-                    // remove the head of the list
-                    sr->routing_table = rTableEntry->next;
-                }
-                else
-                {
-                    prev->next = rTableEntry->next;
-                }
-                auto temp = rTableEntry;
-                rTableEntry = rTableEntry->next;
-                delete (temp);
+    // while (rTableEntry)
+    // {
+    //     time_t now = time(NULL);
+    //     if (rTableEntry->isStatic == RTABLE_ENTRY_DYNAMIC)
+    //     {
+    //         if (now - rTableEntry->refreshTime > 3 * rTableEntry->helloInt)
+    //         {
+    //             // if first entry is stale...
+    //             if (prev == nullptr)
+    //             {
+    //                 // remove the head of the list
+    //                 sr->routing_table = rTableEntry->next;
+    //             }
+    //             else
+    //             {
+    //                 prev->next = rTableEntry->next;
+    //             }
+    //             auto temp = rTableEntry;
+    //             rTableEntry = rTableEntry->next;
+    //             delete (temp);
 
-                // FLOOD LINKSTATE
-            }
-        }
-        else
-        {
-            prev = rTableEntry;
-            rTableEntry = rTableEntry->next;
-        }
-    }
+    //             // FLOOD LINKSTATE
+    //         }
+    //     }
+    //     else
+    //     {
+    //         prev = rTableEntry;
+    //         rTableEntry = rTableEntry->next;
+    //     }
+    // }
 }
