@@ -4,6 +4,7 @@
 #include <chrono>
 #include <mutex>
 #include <unordered_map>
+#include "neighbor.h"
 
 namespace utils
 {
@@ -36,4 +37,6 @@ namespace utils
 
 extern std::mutex routingMtx;
 extern std::mutex neighborMtx;
+extern utils::Topology Topo;
+
 // extern std::unordered_map < uint32_t,

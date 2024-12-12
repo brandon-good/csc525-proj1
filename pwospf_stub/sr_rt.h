@@ -33,9 +33,6 @@ struct sr_rt
     struct in_addr gw;
     struct in_addr mask;
     char interface[SR_IFACE_NAMELEN];
-    uint8_t isStatic;
-    uint16_t helloInt;
-    time_t refreshTime;
     struct sr_rt *next;
 };
 

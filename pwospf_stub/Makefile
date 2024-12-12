@@ -85,15 +85,15 @@ dist-clean: clean clean-deps
 	rm -f .*.swp pwospf_stub.tar.gz
 
 dist: dist-clean
-	(cd ..; tar -X pwospf_stub/exclude -cvf pwospf_stub.tar pwospf_stub/; gzip pwospf_stub.tar); \
+	(cd ..; tar  -cvf pwospf_stub.tar pwospf_stub/; gzip pwospf_stub.tar); \
     mv ../pwospf_stub.tar.gz .
 
 tags:
 	ctags *.c
 
 test-static: sr
-	./sr -t 103 -v vhost1 -r rtable.vhost1 -l logfile.vhost1
-	./sr -t 103 -v vhost2 -r rtable.vhost2 -l logfile.vhost2 > /dev/null 
+	./sr -t 103 -v vhost1 -r rtable.vhost1 -l logfile.vhost1  > /dev/null &\
+	./sr -t 103 -v vhost2 -r rtable.vhost2 -l logfile.vhost2   &\
 	./sr -t 103 -v vhost3 -r rtable.vhost3 -l logfile.vhost3 > /dev/null 
 
 test: stop sr 

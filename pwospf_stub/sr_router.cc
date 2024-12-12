@@ -21,21 +21,26 @@ extern "C"
 #include "sr_if.h"
 #include "sr_rt.h"
 #include "sr_router.h"
-#include "sr_pwospf.h"
 }
+#include "sr_pwospf.h"
 #include "sr_protocol.h"
 
 #include "utils.h"
 #include <iostream>
 #include <unordered_map>
 #include <string>
+#include <sstream>
 #include <cstring>
 #include <array>
 #include <queue>
 #include <mutex>
+#include "neighbor.h"
+// forward declare
+void send_lsu_pkts(sr_instance *);
 
 std::mutex routingMtx;
 std::mutex neighborMtx;
+utils::Topology Topo;
 
 std::unordered_map<in_addr_t, utils::arpcache_mac> ARPCACHE;
 std::queue<utils::buffered_packet *> PACKET_BUFFER;
@@ -410,7 +415,7 @@ bool longest_match(sr_rt *&rtable, ip *ip_packet)
 }
 
 void forward_ip_packet(struct sr_instance *sr,
-                       std::string &dst_mac,
+                       const std::string &dst_mac,
                        uint8_t *packet,
                        const unsigned int len,
                        const char *interface)
@@ -542,13 +547,14 @@ void incoming_process_as_ip(struct sr_instance *sr,
             return; // drop the packet
         }
     }
-    else if (ip_packet->ip_p == OSPF_IP_PROTO && ip_packet->ip_dst.s_addr == OSPF_AllSPFRouters)
+    else if (ip_packet->ip_p == OSPF_IP_PROTO && ip_packet->ip_dst.s_addr == htonl(OSPF_AllSPFRouters))
     {
         // we are receiving a Hello packet
         Debug("received a pwospf HELLO packet\n");
         ospfv2_hdr *ospfPkt = reinterpret_cast<struct ospfv2_hdr *>(packet + sizeof(struct sr_ethernet_hdr) + ip_packet->ip_hl * 4);
 
         bool validPkt = true;
+        validPkt = validPkt && ospfPkt->type == OSPF_TYPE_HELLO;
         validPkt = validPkt && ospfPkt->version == OSPF_V2;
         validPkt = validPkt && ospfPkt->aid == OSPF_DEFAULT_AID;
         validPkt = validPkt && ospfPkt->audata == OSPF_DEFAULT_AUTHDATA;
@@ -558,16 +564,96 @@ void incoming_process_as_ip(struct sr_instance *sr,
         ospfPkt->csum = 0;
 
         validPkt = validPkt && cksum == ospfv2_hdr_cksum(ospfPkt);
-        Debug("%d\n", validPkt);
 
         if (!validPkt)
         {
-            Debug("received an invalid pwospf hello pkt.");
+            std::runtime_error{"received an invalid pwospf hello pkt."};
             return;
         }
         else
         {
-            // update or add to rtable? interface?
+            assert(packet);
+            assert(interface);
+            auto changed = Topo.addHello(packet, interface);
+            if (changed)
+            {
+                send_lsu_pkts(sr);
+            }
+            Debug("finished adding hello to topology from %s\n", interface);
+        }
+    }
+    else if (ip_packet->ip_p == OSPF_IP_PROTO && ip_packet->ip_dst.s_addr != htonl(OSPF_AllSPFRouters))
+    {
+        Debug("we received a LSU packet!\n");
+
+        ospfv2_hdr *ospfPkt = reinterpret_cast<struct ospfv2_hdr *>(packet + sizeof(sr_ethernet_hdr) + sizeof(ip));
+
+        bool validPkt = true;
+        validPkt = validPkt && ospfPkt->type == OSPF_TYPE_LSU;
+        validPkt = validPkt && ospfPkt->version == OSPF_V2;
+        validPkt = validPkt && ospfPkt->aid == OSPF_DEFAULT_AID;
+        validPkt = validPkt && ospfPkt->audata == OSPF_DEFAULT_AUTHDATA;
+        validPkt = validPkt && ospfPkt->autype == OSPF_DEFAULT_AUTHTYPE;
+
+        uint16_t cksum = ospfPkt->csum;
+        ospfPkt->csum = 0;
+
+        validPkt = validPkt && (cksum == ospfv2_hdr_cksum(ospfPkt));
+        auto lsuHdr = reinterpret_cast<ospfv2_lsu_hdr *>(packet + sizeof(sr_ethernet_hdr) + sizeof(ip) + sizeof(ospfv2_hdr));
+        if (ospfPkt->rid == sr->ospf_subsys->rid)
+        {
+            Debug(" LSU packet had my rid!\n:");
+
+            return;
+        }
+        if (lsuHdr->ttl == 0)
+        {
+            Debug(" LSU packet ttl died!\n:");
+            return;
+        }
+        else
+        {
+            Debug("ttl %u\n", lsuHdr->ttl);
+        }
+
+        if (!validPkt)
+        {
+            Debug("that packet was invalid..\n");
+            std::runtime_error{"received an invalid pwospf hello pkt."};
+            return;
+        }
+        else
+        {
+            Debug("Looks like that LSU packet is a okay...\n");
+            assert(packet);
+            assert(interface);
+            assert(ospfPkt->type == OSPF_TYPE_LSU);
+            auto changed = Topo.addLSU(packet);
+            if (changed)
+            {
+                Debug("that lsu update changed our LSU database topology...\n");
+                // TODO routing table update
+                // recalculate the shortest ptath
+
+                std::lock_guard<std::mutex> lock(Topo.topoMutex);
+                auto nbrs = Topo.directNeighbors();
+                for (const auto &pair : nbrs)
+                {
+                    // oops
+
+                    if (std::strcmp(pair.second.interface, interface) != 0)
+                    {
+                        std::ostringstream strmac;
+                        for (int a = 0; a < 6; a++)
+                        {
+                            strmac << (int)pair.second.mac[a];
+                        }
+                        Debug("forwarding the LSU update...\n");
+                        forward_ip_packet(sr, strmac.str(), packet, len, pair.second.interface);
+                    }
+                }
+            }
+            Debug("finished adding LSU to topology from %s\n", interface);
         }
     }
     else

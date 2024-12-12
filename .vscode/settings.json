@@ -58,6 +58,7 @@
         "map": "cpp",
         "mutex": "c",
         "condition_variable": "cpp",
-        "shared_mutex": "cpp"
+        "shared_mutex": "cpp",
+        "pwospf_protocol.h": "c"
     }
 }

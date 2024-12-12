@@ -40,7 +40,6 @@ extern "C" int pwospf_init(struct sr_instance *);
 #else
 int pwospf_init(struct sr_instance *);
 #endif
-
 #ifndef OSPF_IP_PROTO
 #define OSPF_IP_PROTO 89
 #endif
